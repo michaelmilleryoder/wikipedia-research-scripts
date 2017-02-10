@@ -12,9 +12,9 @@ Calculate diffs between article revisions.
 Output is unordered but not tokenized
 """
 
-art_dirpath = '/home/michael/school/research/wp/wp_articles/article_revisions'
+art_dirpath = '/home/michael/school/research/wp/ar/ar_articles'
 # I think doesn't include refs and citations and much other Wikipedia markup
-diff_dirpath = '/home/michael/school/research/wp/wp_articles/article_diffs'
+diff_dirpath = '/home/michael/school/research/wp/ar/ar_article_diffs'
 
 def preprocess(intext):
     
@@ -35,42 +35,57 @@ def preprocess(intext):
         
     # Process URLs--just remove http for tokenizer
     for url in re.findall(urlpat, intext):
-        host = urlsplit(url).netloc
-        text = text.replace(url, host)
+        try:
+            host = urlsplit(url).netloc
+        except ValueError("Invalid IPv6 URL") as e: 
+            continue
+        else:
+            text = text.replace(url, host)
         
     return text
 
 urlpat = r'https?:\/\/(?:www\.)?[^ ]*'
 
-for f in os.listdir(art_dirpath):
-    print("Processing {0}".format(f), end='')
-    sys.stdout.flush()
-    fpath = os.path.join(art_dirpath, f)
-    with open(fpath) as csvfile:
-        r = csv.reader(csvfile, delimiter='\t')
-        prevc = Counter()
-        with open(os.path.join(diff_dirpath, f[:-4]+'_diff.csv'), 'w') as outfile:
-            w = csv.writer(outfile)
-            w.writerow(['article_name', 'timestamp', 'additions', 'deletions', 'editor', 'edit_comment'])
-            for i, row in enumerate(r):
-                if i % 1000 == 0:
-                    #print(i/1000, 'k')
-                    print('.', end='')
-                    sys.stdout.flush()
-                
-                text = preprocess(row[2])
-        
-                textc = Counter(text.split())
-                addc = textc - prevc
-                adds = ' '.join(list(addc.elements()))
-#                 adds = ' '.join(word_tokenize(' '.join(list(addc.elements()))))
-                delc = prevc - textc
-                dels = ' '.join(list(delc.elements()))
-#                 dels = ' '.join(word_tokenize(' '.join(list(delc.elements()))))
-                
-                if adds or dels:
-                    line = row[:2] + [adds, dels] + row[3:]
-                    w.writerow(line)
-                    prevc = textc
+def main():
+
+    existing = [fname for fname in os.listdir(diff_dirpath)]
+
+    for f in os.listdir(art_dirpath):
+
+        if f in existing:
+            continue
+
+        print("Processing {0}".format(f), end='')
+        sys.stdout.flush()
+        fpath = os.path.join(art_dirpath, f)
+        with open(fpath) as csvfile:
+            r = csv.reader(csvfile, delimiter='\t')
+            prevc = Counter()
+            with open(os.path.join(diff_dirpath, f[:-4]+'_diff.csv'), 'w') as outfile:
+                w = csv.writer(outfile)
+                w.writerow(['article_name', 'timestamp', 'additions', 'deletions', 'editor', 'edit_comment'])
+                for i, row in enumerate(r):
+                    if i % 1000 == 0:
+                        #print(i/1000, 'k')
+                        print('.', end='')
+                        sys.stdout.flush()
+                    
+                    text = preprocess(row[2])
             
-        print("\nWrote diff file for {:s} in {:s}\n".format(f, diff_dirpath))
+                    textc = Counter(text.split())
+                    addc = textc - prevc
+                    adds = ' '.join(list(addc.elements()))
+    #                 adds = ' '.join(word_tokenize(' '.join(list(addc.elements()))))
+                    delc = prevc - textc
+                    dels = ' '.join(list(delc.elements()))
+    #                 dels = ' '.join(word_tokenize(' '.join(list(delc.elements()))))
+                    
+                    if adds or dels:
+                        line = row[:2] + [adds, dels] + row[3:]
+                        w.writerow(line)
+                        prevc = textc
+                
+            print("\nWrote diff file for {:s} in {:s}\n".format(f, diff_dirpath))
+
+if __name__ == '__main__':
+    main()
