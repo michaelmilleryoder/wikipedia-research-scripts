@@ -5,6 +5,7 @@ from collections import Counter
 import sys
 import re
 from urllib.parse import urlsplit
+import pdb
 csv.field_size_limit(sys.maxsize)
 
 """ 
@@ -37,7 +38,7 @@ def preprocess(intext):
     for url in re.findall(urlpat, intext):
         try:
             host = urlsplit(url).netloc
-        except ValueError("Invalid IPv6 URL") as e: 
+        except ValueError as e: 
             continue
         else:
             text = text.replace(url, host)
@@ -52,7 +53,7 @@ def main():
 
     for f in os.listdir(art_dirpath):
 
-        if f in existing:
+        if f[:-4]+'_diff.csv' in existing:
             continue
 
         print("Processing {0}".format(f), end='')
