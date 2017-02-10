@@ -51,7 +51,7 @@ def main():
 
     existing = [fname for fname in os.listdir(diff_dirpath)]
 
-    for f in os.listdir(art_dirpath):
+    for f in sorted(os.listdir(art_dirpath)):
 
         if f[:-4]+'_diff.csv' in existing:
             continue
