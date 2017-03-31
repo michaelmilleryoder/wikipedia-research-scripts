@@ -13,6 +13,7 @@ Calculate diffs between article revisions.
 Output is unordered but not tokenized
 """
 
+""" I/O """
 art_dirpath = '/home/michael/school/research/wp/ar/ar_articles'
 # I think doesn't include refs and citations and much other Wikipedia markup
 diff_dirpath = '/home/michael/school/research/wp/ar/ar_article_diffs'
