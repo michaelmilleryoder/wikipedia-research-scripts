@@ -1,4 +1,5 @@
 import pandas as pd
+from functools import partial
 import multiprocessing as mp
 import csv
 from string import ascii_letters
@@ -92,9 +93,14 @@ def write_edit_scores(data, colnames, artname, edscores_path):
     return edscores_outpath
 
 
-def score_edits(art, threads, talk, stops, colnames):
+def score_edits(art, art_threads, talk, stops, colnames, existing_arts):
     """ Score edits for an article, write output to a csv file 
     """
+
+    if str_to_fname(art, 'edit_scores', 'csv') in existing_arts:
+        return
+
+    threads = art_threads[art]
 
     art_data = [] # output, all threads
 
@@ -126,9 +132,9 @@ def score_edits(art, threads, talk, stops, colnames):
                              & diff_data['editor'].isin(talk_parts)] # could be intervening edits by non-talk participants
         sess_parts = set(sess_edits['editor'].tolist())
         
-        if sess_edits.empty:
-            #print('No diffs')
-            return
+        if sess_edits.empty: # No edits by talk page participants more than just stopwords
+            #tqdm.write("No diffs")
+            continue
         sess_beg = min(sess_edits['timestamp'])
         sess_end = max(sess_edits['timestamp'])
         
@@ -203,12 +209,14 @@ def score_edits(art, threads, talk, stops, colnames):
 
             art_data.extend(sess_finalrows)
 
-    if len(art_data) < 1:
-        pdb.set_trace()
+    if len(art_data) < 1: # No edits for talk participants in any thread
+        #tqdm.write("No diffs")
         return
     
     # Write csv
-    return write_edit_scores(art_data, colnames, art, edscores_path)
+    written_path = write_edit_scores(art_data, colnames, art, edscores_path)
+    tqdm.write("Wrote edit scores for article {}".format(written_path))
+    return 
 
 
 def score_editors(stops, talk, n_processes):
@@ -245,22 +253,27 @@ def score_editors(stops, talk, n_processes):
 
     print("\nScoring editors ...")
 
-    # Multi-processing
-    output = mp.Queue()
-
-    no_article_ctr = 0
     existing_arts = os.listdir(edscores_path)
 
-    for art in tqdm(arts):
+    # Multi-processing
+    with mp.Pool(processes=n_processes) as pool:
+        #pool = mp.Pool(processes=10) # number of cores
+        partial_score_edits = partial(score_edits, art_threads=art_threads, talk=talk, stops=stops, colnames=art_data_colnames, existing_arts=existing_arts)
+
+        for i in tqdm(pool.imap_unordered(partial_score_edits, arts, chunksize=10), total=len(arts)):
+            pass
+        #pool.map(partial_score_edits, arts, chunksize=10) # Works, and is fast
+
+    #for art in tqdm(arts):
     #for i, (art, thread) in enumerate(tqdm(threads)):
 
-        if str_to_fname(art, 'edit_scores', 'csv') in existing_arts:
-            tqdm.write('Article already completed')
-            continue
+#        if str_to_fname(art, 'edit_scores', 'csv') in existing_arts:
+#            #tqdm.write('Article already completed')
+#            continue
     
-        written_path = score_edits(art, art_threads[art], talk, stops, art_data_colnames)
-        if written_path:
-            tqdm.write("Wrote edit scores for article {:s}".format(written_path))
+        #written_path = score_edits(art, art_threads[art], talk, stops, art_data_colnames)
+        #if written_path:
+        #    tqdm.write("Wrote edit scores for article {:s}".format(written_path))
         
     #if not mult_files:
     #    # Sort art_data
@@ -369,7 +382,8 @@ def build_out(talk):
     talk_scores = pd.DataFrame(outrows, columns=['article', 'thread_title', 'editor', 'editor_talk', 'other_talk',
                                   '#editor_turns', '#other_turns', 'editor_score'])
     talk_scores.to_csv(outpath, index=False)
-    print('Wrote thread info with editor scores to {:s}'.format(outpath))
+    #print('Wrote thread info with editor scores to {:s}'.format(outpath))
+    tqdm.write('Wrote thread info with editor scores to {:s}'.format(outpath))
 
 
 
@@ -395,7 +409,7 @@ def main():
     with open("stopwords_en.txt") as f:
         stops = f.read().splitlines()
 
-    score_editors(stops, talk, 10)
+    score_editors(stops, talk, 15)
     #build_out(talk)
 
 if __name__ == '__main__':
