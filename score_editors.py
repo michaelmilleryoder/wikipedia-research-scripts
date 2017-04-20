@@ -85,129 +85,133 @@ def write_edit_scores(data, colnames, artname, edscores_path):
         
     art_data.drop_duplicates(inplace=True)
 
-    # Print edit scores if multi file
-    edscores_outpath = os.path.join(edscores_path, str_to_fname(artname, '_edit_scores', 'csv'))
+    # Print edit scores
+    edscores_outpath = os.path.join(edscores_path, str_to_fname(artname, 'edit_scores', 'csv'))
     art_data.to_csv(edscores_outpath, index=False)
 
     return edscores_outpath
 
 
-def score_edits(art, thread, talk, stops, colnames):
+def score_edits(art, threads, talk, stops, colnames):
     """ Score edits for an article, write output to a csv file 
     """
 
-    # Talk page participants
-    talk_parts = set(talk[(talk['article']==art) & (talk['thread']==thread)]['username'].values)
-    
-    talk_rows = talk[(talk['article'] == art) 
-                            & (talk['thread'] == thread)
-                            ].loc[:, ['article', 'thread', 'timestamp']]
-    thread_end = max(talk['timestamp'])
-    thread_beg = min(talk['timestamp'])
-    
-    # Build edit history from beg to end of thread
-    artfp = os.path.join(diff_dir, art.replace(' ', '_').replace('/', '_').lower() + '_diff.csv')
-    if not os.path.exists(artfp):
-        no_article_ctr += 1
-        tqdm.write("{:d} No article".format(no_article_ctr))
-        pdb.set_trace()
-    diff_data = pd.read_csv(artfp, parse_dates=['timestamp'])
+    art_data = [] # output, all threads
 
-    art_data = []
+    for thread in threads:
 
-    sess_beg = thread_beg - DateOffset(days=1)
-    sess_end = thread_end + DateOffset(days=1)
-
-    # Find edits that are in same timeframe as thread and which thread participants make
-    sess_edits = diff_data.loc[(diff_data['timestamp'] >= sess_beg) & (diff_data['timestamp'] < sess_end)
-                         & diff_data['editor'].isin(talk_parts)] # could be intervening edits by non-talk participants
-    sess_parts = set(sess_edits['editor'].tolist())
-    
-    if sess_edits.empty:
-        #print('No diffs')
-        return
-    sess_beg = min(sess_edits['timestamp'])
-    sess_end = max(sess_edits['timestamp'])
-    
-    edscores = defaultdict(lambda: [0,0]) # [n_wds_successful, n_wds_changed]
-    
-    # Calculate success score for each edit compared with end revision
-    new_rows = []
-    for row in sess_edits.itertuples():
-        row_timestamp = row[2]
-        row_editor = row[5]
-        edit_text = diff_data.loc[diff_data['timestamp']==row_timestamp]
-        diffs = diff_data.loc[(diff_data['timestamp'] > row_timestamp) & 
-            (diff_data['timestamp'] <= (sess_end + DateOffset(days=1)))] 
-            # includes edits by non-talk participants, as should
+        # Talk page participants
+        talk_parts = set(talk[(talk['article']==art) & (talk['thread']==thread)]['username'].values)
         
-        # Unigram counter for edit
-        if (len(edit_text['deletions'].values) > 0) and (isinstance(edit_text['deletions'].values[0], str)):
-            positive_dels = Counter([w.lower() for w in edit_text['deletions'].values[0].split() if w.lower() not in stops])
-            edit_diff = Counter({key:-1*positive_dels[key] for key in positive_dels})
-        else:
-            edit_diff = Counter()
-        if (len(edit_text['additions'].values) > 0) and (isinstance(edit_text['additions'].values[0], str)):
-            adds = Counter([w.lower() for w in edit_text['additions'].values[0].split() if w.lower() not in stops])
-        else:
-            adds = Counter()
-        edit_diff.update(adds)
-        edit_diff = {k: edit_diff[k] for k in edit_diff if edit_diff[k] != 0}
+        talk_rows = talk[(talk['article'] == art) 
+                                & (talk['thread'] == thread)
+                                ].loc[:, ['article', 'thread', 'timestamp']]
+        thread_end = max(talk['timestamp'])
+        thread_beg = min(talk['timestamp'])
         
-        if diffs.empty: # No revisions after thread end
-            edit_score = 1.0
-            n_wds = abs(sum(edit_diff.values()))
-            edscores[row_editor][0] += edit_score * n_wds
-            edscores[row_editor][1] += n_wds
-                
-        else: 
-            
-            # Unigram counter for revision diffs in window
-            next_dels = ' '.join(d.lower() for d in diffs['deletions'].values.tolist() if isinstance(d, str))
-            changes = Counter([w for w in next_dels.split() if w not in stops])
-            changes = Counter({key:-1*changes[key] for key in changes})
-            next_adds = ' '.join(a.lower() for a in diffs['additions'].values.tolist() if isinstance(a, str))
-            next_addwds = Counter([w for w in next_adds.split() if w not in stops])
-
-            changes.update(next_addwds)
-            
-            edit_score, n_wds = dict_diff(edit_diff, changes)
-            edscores[row_editor][0] += edit_score * n_wds
-            edscores[row_editor][1] += n_wds
-
-        new_row = list(row[1:]) # don't want index
-        new_row.append(edit_score)
-        new_row.append(thread) # thread_title
-        if diffs.empty:
-            new_row.append(np.nan)
-        else:
-            new_row.append(max(diffs['timestamp'])) # comparison_timestamp
-        new_rows.append(new_row)
-
-    # Calculate editor thread scores
-    for ed in sess_parts:
-        sess_finalrows = [r for r in new_rows \
-                            if r[0]==art and r[-2]==thread and \
-                            r[4]==ed]
-        if edscores[ed][1] == 0: # editor whose only edit was the final one and was of no words
-            ed_threadscore = 1.0
-        else:
-            ed_threadscore = edscores[ed][0]/edscores[ed][1]
-        if ed_threadscore > 1.0 or ed_threadscore < 0.0:
+        # Build edit history from beg to end of thread
+        artfp = os.path.join(diff_dir, art.replace(' ', '_').replace('/', '_').lower() + '_diff.csv')
+        if not os.path.exists(artfp):
+            no_article_ctr += 1
+            tqdm.write("{:d} No article".format(no_article_ctr))
             pdb.set_trace()
-        for i in range(len(sess_finalrows)):
-            sess_finalrows[i].append(ed_threadscore)
+        diff_data = pd.read_csv(artfp, dtype={'article_name': str}, parse_dates=['timestamp'])
 
-        art_data.extend(sess_finalrows)
+
+        sess_beg = thread_beg - DateOffset(days=1)
+        sess_end = thread_end + DateOffset(days=1)
+
+        # Find edits that are in same timeframe as thread and which thread participants make
+        sess_edits = diff_data.loc[(diff_data['timestamp'] >= sess_beg) & (diff_data['timestamp'] < sess_end)
+                             & diff_data['editor'].isin(talk_parts)] # could be intervening edits by non-talk participants
+        sess_parts = set(sess_edits['editor'].tolist())
+        
+        if sess_edits.empty:
+            #print('No diffs')
+            return
+        sess_beg = min(sess_edits['timestamp'])
+        sess_end = max(sess_edits['timestamp'])
+        
+        edscores = defaultdict(lambda: [0,0]) # [n_wds_successful, n_wds_changed]
+        
+        # Calculate success score for each edit compared with end revision
+        new_rows = []
+        for row in sess_edits.itertuples():
+            row_timestamp = row[2]
+            row_editor = row[5]
+            edit_text = diff_data.loc[diff_data['timestamp']==row_timestamp]
+            diffs = diff_data.loc[(diff_data['timestamp'] > row_timestamp) & 
+                (diff_data['timestamp'] <= (sess_end + DateOffset(days=1)))] 
+                # includes edits by non-talk participants, as should
+            
+            # Unigram counter for edit
+            if (len(edit_text['deletions'].values) > 0) and (isinstance(edit_text['deletions'].values[0], str)):
+                positive_dels = Counter([w.lower() for w in edit_text['deletions'].values[0].split() if w.lower() not in stops])
+                edit_diff = Counter({key:-1*positive_dels[key] for key in positive_dels})
+            else:
+                edit_diff = Counter()
+            if (len(edit_text['additions'].values) > 0) and (isinstance(edit_text['additions'].values[0], str)):
+                adds = Counter([w.lower() for w in edit_text['additions'].values[0].split() if w.lower() not in stops])
+            else:
+                adds = Counter()
+            edit_diff.update(adds)
+            edit_diff = {k: edit_diff[k] for k in edit_diff if edit_diff[k] != 0}
+            
+            if diffs.empty: # No revisions after thread end
+                edit_score = 1.0
+                n_wds = abs(sum(edit_diff.values()))
+                edscores[row_editor][0] += edit_score * n_wds
+                edscores[row_editor][1] += n_wds
+                    
+            else: 
+                
+                # Unigram counter for revision diffs in window
+                next_dels = ' '.join(d.lower() for d in diffs['deletions'].values.tolist() if isinstance(d, str))
+                changes = Counter([w for w in next_dels.split() if w not in stops])
+                changes = Counter({key:-1*changes[key] for key in changes})
+                next_adds = ' '.join(a.lower() for a in diffs['additions'].values.tolist() if isinstance(a, str))
+                next_addwds = Counter([w for w in next_adds.split() if w not in stops])
+
+                changes.update(next_addwds)
+                
+                edit_score, n_wds = dict_diff(edit_diff, changes)
+                edscores[row_editor][0] += edit_score * n_wds
+                edscores[row_editor][1] += n_wds
+
+            new_row = list(row[1:]) # don't want index
+            new_row.append(edit_score)
+            new_row.append(thread) # thread_title
+            if diffs.empty:
+                new_row.append(np.nan)
+            else:
+                new_row.append(max(diffs['timestamp'])) # comparison_timestamp
+            new_rows.append(new_row)
+
+        # Calculate editor thread scores
+        for ed in sess_parts:
+            sess_finalrows = [r for r in new_rows \
+                                if r[0]==art and r[-2]==thread and \
+                                r[4]==ed]
+            if edscores[ed][1] == 0: # editor whose only edit was the final one and was of no words
+                ed_threadscore = 1.0
+            else:
+                ed_threadscore = edscores[ed][0]/edscores[ed][1]
+            if ed_threadscore > 1.0 or ed_threadscore < 0.0:
+                pdb.set_trace()
+            for i in range(len(sess_finalrows)):
+                sess_finalrows[i].append(ed_threadscore)
+
+            art_data.extend(sess_finalrows)
 
     if len(art_data) < 1:
+        pdb.set_trace()
         return
     
     # Write csv
     return write_edit_scores(art_data, colnames, art, edscores_path)
 
 
-def score_editors(stops, talk):
+def score_editors(stops, talk, n_processes):
     """ Score editors
         Print out article edit file with score for each edit 
 
@@ -216,14 +220,11 @@ def score_editors(stops, talk):
             talk: DataFrame of talk data
     """
 
-    print("Scoring editors ...")
-
     # Load, initialize data
     assert os.path.exists(diff_dir)
-    thread_durs = []
 
     # SCORE THREAD-WISE WINNERS FOR EACH DISCUSSION AND EDIT PARTICIPANT
-    art_data = [] # Final article edit spreadsheet with scores, will be organized by article edit keys
+    #art_data = [] # Final article edit spreadsheet with scores, will be organized by article edit keys
     art_data_colnames = ['article', 'edit_timestamp', 
                         'additions', 'deletions',
                         'editor', 'edit_comment',
@@ -231,20 +232,35 @@ def score_editors(stops, talk):
                         'comparison_timestamp',
                         'editor_thread_score']
 
-    threads = sorted(list(set(zip(talk['article'], talk['thread']))))
+    # Get list of articles and threads
+    print("Building list of articles and threads")
+    arts = sorted(set(talk['article']))
+    art_thread_pairs = sorted(set(zip(talk['article'], talk['thread'])))
+    art_threads = {}
+    for art in tqdm(arts):
+        art_threads[art] = sorted(set(t for a,t in art_thread_pairs if a == art))
 
     # Get edits by thread editors in between initial revert and session end
     # session end: end of thread or last revert 7 days after last thread entry by thread participants
 
+    print("\nScoring editors ...")
+
+    # Multi-processing
+    output = mp.Queue()
+
     no_article_ctr = 0
     existing_arts = os.listdir(edscores_path)
-    #for i, (art, thread) in enumerate(tqdm(threads[10000:10004])):
-    for i, (art, thread) in enumerate(tqdm(threads)):
+
+    for art in tqdm(arts):
+    #for i, (art, thread) in enumerate(tqdm(threads)):
 
         if str_to_fname(art, 'edit_scores', 'csv') in existing_arts:
+            tqdm.write('Article already completed')
             continue
     
-        score_edits(art, thread, talk, stops, art_data_colnames)
+        written_path = score_edits(art, art_threads[art], talk, stops, art_data_colnames)
+        if written_path:
+            tqdm.write("Wrote edit scores for article {:s}".format(written_path))
         
     #if not mult_files:
     #    # Sort art_data
@@ -379,7 +395,7 @@ def main():
     with open("stopwords_en.txt") as f:
         stops = f.read().splitlines()
 
-    score_editors(stops, talk)
+    score_editors(stops, talk, 10)
     #build_out(talk)
 
 if __name__ == '__main__':
