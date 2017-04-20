@@ -86,13 +86,13 @@ def write_edit_scores(data, colnames, artname, edscores_path):
     art_data.drop_duplicates(inplace=True)
 
     # Print edit scores if multi file
-    edscores_outpath = os.path.join(edscores_path, artname.replace(' ', '_').replace('/', '_').lower() + '_edit_scores.csv')
+    edscores_outpath = os.path.join(edscores_path, str_to_fname(artname, '_edit_scores', 'csv'))
     art_data.to_csv(edscores_outpath, index=False)
 
     return edscores_outpath
 
 
-def score_edits(art, thread, talk):
+def score_edits(art, thread, talk, stops, colnames):
     """ Score edits for an article, write output to a csv file 
     """
 
@@ -111,14 +111,9 @@ def score_edits(art, thread, talk):
         no_article_ctr += 1
         tqdm.write("{:d} No article".format(no_article_ctr))
         pdb.set_trace()
-        continue
     diff_data = pd.read_csv(artfp, parse_dates=['timestamp'])
 
-    # Write edit scores for the file         
-    if len(art_data) > 0:
-        edscores_outpath = write_edit_scores(art_data, art_data_colnames, prev_art, edscores_path)
-        tqdm.write("Wrote edit scores for article {:s}".format(edscores_outpath))
-        art_data = []
+    art_data = []
 
     sess_beg = thread_beg - DateOffset(days=1)
     sess_end = thread_end + DateOffset(days=1)
@@ -130,7 +125,7 @@ def score_edits(art, thread, talk):
     
     if sess_edits.empty:
         #print('No diffs')
-        continue
+        return
     sess_beg = min(sess_edits['timestamp'])
     sess_end = max(sess_edits['timestamp'])
     
@@ -187,7 +182,6 @@ def score_edits(art, thread, talk):
             new_row.append(np.nan)
         else:
             new_row.append(max(diffs['timestamp'])) # comparison_timestamp
-        #art_data.append(new_row)
         new_rows.append(new_row)
 
     # Calculate editor thread scores
@@ -204,8 +198,13 @@ def score_edits(art, thread, talk):
         for i in range(len(sess_finalrows)):
             sess_finalrows[i].append(ed_threadscore)
 
+        art_data.extend(sess_finalrows)
+
+    if len(art_data) < 1:
+        return
+    
     # Write csv
-    return write_edit_scores(art_data, art_data_colnames, artname, edscores_path)
+    return write_edit_scores(art_data, colnames, art, edscores_path)
 
 
 def score_editors(stops, talk):
@@ -239,16 +238,14 @@ def score_editors(stops, talk):
 
     no_article_ctr = 0
     existing_arts = os.listdir(edscores_path)
+    #for i, (art, thread) in enumerate(tqdm(threads[10000:10004])):
     for i, (art, thread) in enumerate(tqdm(threads)):
 
-        if str_to_fname(art, '_edit_scores', 'csv') in existing_arts:
+        if str_to_fname(art, 'edit_scores', 'csv') in existing_arts:
             continue
     
-        score_edits(art, thread, talk)
+        score_edits(art, thread, talk, stops, art_data_colnames)
         
-        art_data.extend(sess_finalrows)
-
-
     #if not mult_files:
     #    # Sort art_data
     #    art_data = pd.DataFrame(art_data, columns=art_data_colnames)
@@ -270,7 +267,9 @@ def score_editors(stops, talk):
     #    tqdm.write("Wrote edit scores for article {:s}".format(edscores_path))
 
 def build_out(talk):
-    """ Assemble editor scores with talk page discussion 
+    """ Assemble editor scores with talk page discussion.
+        Takes all files found in edscores_path
+    
         Args:
             talk: DataFrame of talk
     """
@@ -381,7 +380,7 @@ def main():
         stops = f.read().splitlines()
 
     score_editors(stops, talk)
-    build_out(talk)
+    #build_out(talk)
 
 if __name__ == '__main__':
     main()
