@@ -1,4 +1,5 @@
 import pandas as pd
+import pickle
 from functools import partial
 import multiprocessing as mp
 import csv
@@ -36,10 +37,6 @@ diff_dir = 'enwiki_diffs/'
 # output
 edscores_path = 'enwiki_edit_scores/'
 outpath = 'enwiki_talk/enwiki_talk_scores.csv'
-
-# settings
-#mult_files = True # whether or not want edscores to be printed to multiple files (if will be scoring lots of edits) or a single file
-
 
 def dict_diff(orig, chg):
     """ Calculates diff between dictionary a and b based on keys from dict a
@@ -314,11 +311,15 @@ def build_out(talk):
     print("Building editor threads ...")
     edthreads = []
     for fname in tqdm(os.listdir(edscores_path)):
-        art_data = pd.read_csv(os.path.join(edscores_path, fname))
+        art_data = pd.read_csv(os.path.join(edscores_path, fname), dtype={'article':str, 'thread_title':str, 'editor':str}) # dtype str
         ind_edthreads = set((zip(art_data['article'], art_data['thread_title'], art_data['editor'], art_data['editor_thread_score'])))
         edthreads.extend(list(ind_edthreads))
 
     edthreads = sorted(edthreads)
+
+    # Save pickle of edthreads data structure
+    #with open('edthreads.pkl', 'wb') as out:
+    #    pickle.dump(edthreads, out)
 
     # Build input corpora of editors' text + others' text, get labels
     # Assemble input text of just editors' text
