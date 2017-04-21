@@ -10,6 +10,7 @@ from pandas.tseries.offsets import DateOffset
 import numpy as np
 import math
 from tqdm import tqdm
+from datetime import datetime
 import pdb
 
 """ This script scores editors based on the proportion of edits that last
@@ -100,10 +101,17 @@ def score_edits(art, art_threads, talk, stops, colnames, existing_arts):
     if str_to_fname(art, 'edit_scores', 'csv') in existing_arts:
         return
 
+    artfp = os.path.join(diff_dir, art.replace(' ', '_').replace('/', '_').lower() + '_diff.csv')
+    if not os.path.exists(artfp):
+        #tqdm.write("{:d} No article".format(no_article_ctr))
+        tqdm.write("No article")
+        return
+
     threads = art_threads[art]
 
     art_data = [] # output, all threads
 
+    # Build edit history from beg to end of thread
     for thread in threads:
 
         # Talk page participants
@@ -115,12 +123,7 @@ def score_edits(art, art_threads, talk, stops, colnames, existing_arts):
         thread_end = max(talk['timestamp'])
         thread_beg = min(talk['timestamp'])
         
-        # Build edit history from beg to end of thread
-        artfp = os.path.join(diff_dir, art.replace(' ', '_').replace('/', '_').lower() + '_diff.csv')
-        if not os.path.exists(artfp):
-            no_article_ctr += 1
-            tqdm.write("{:d} No article".format(no_article_ctr))
-            pdb.set_trace()
+
         diff_data = pd.read_csv(artfp, dtype={'article_name': str}, parse_dates=['timestamp'])
 
 
@@ -215,7 +218,7 @@ def score_edits(art, art_threads, talk, stops, colnames, existing_arts):
     
     # Write csv
     written_path = write_edit_scores(art_data, colnames, art, edscores_path)
-    tqdm.write("Wrote edit scores for article {}".format(written_path))
+    tqdm.write("[{}] Wrote edit scores for article {}".format(datetime.now(), written_path))
     return 
 
 
@@ -308,8 +311,9 @@ def build_out(talk):
 
     #    edthreads = sorted(set((zip(art_data['article'], art_data['thread_title'], art_data['editor'], art_data['editor_thread_score']))))
 
+    print("Building editor threads ...")
     edthreads = []
-    for fname in os.listdir(edscores_path):
+    for fname in tqdm(os.listdir(edscores_path)):
         art_data = pd.read_csv(os.path.join(edscores_path, fname))
         ind_edthreads = set((zip(art_data['article'], art_data['thread_title'], art_data['editor'], art_data['editor_thread_score'])))
         edthreads.extend(list(ind_edthreads))
@@ -409,8 +413,8 @@ def main():
     with open("stopwords_en.txt") as f:
         stops = f.read().splitlines()
 
-    score_editors(stops, talk, 15)
-    #build_out(talk)
+    #score_editors(stops, talk, 20)
+    build_out(talk)
 
 if __name__ == '__main__':
     main()
