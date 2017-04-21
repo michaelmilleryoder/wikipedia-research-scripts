@@ -257,43 +257,10 @@ def score_editors(stops, talk, n_processes):
 
     # Multi-processing
     with mp.Pool(processes=n_processes) as pool:
-        #pool = mp.Pool(processes=10) # number of cores
         partial_score_edits = partial(score_edits, art_threads=art_threads, talk=talk, stops=stops, colnames=art_data_colnames, existing_arts=existing_arts)
 
         for i in tqdm(pool.imap_unordered(partial_score_edits, arts, chunksize=10), total=len(arts)):
             pass
-        #pool.map(partial_score_edits, arts, chunksize=10) # Works, and is fast
-
-    #for art in tqdm(arts):
-    #for i, (art, thread) in enumerate(tqdm(threads)):
-
-#        if str_to_fname(art, 'edit_scores', 'csv') in existing_arts:
-#            #tqdm.write('Article already completed')
-#            continue
-    
-        #written_path = score_edits(art, art_threads[art], talk, stops, art_data_colnames)
-        #if written_path:
-        #    tqdm.write("Wrote edit scores for article {:s}".format(written_path))
-        
-    #if not mult_files:
-    #    # Sort art_data
-    #    art_data = pd.DataFrame(art_data, columns=art_data_colnames)
-    #    art_data.sort_values(['article', 'thread_title', 'edit_timestamp'], inplace=True)
-
-    #    # Select columns
-    #    cols = ['article', 'thread_title', 'edit_timestamp', 'editor', 'edit_comment',
-    #           'edit_score', 'editor_thread_score', 'comparison_timestamp', 'additions', 'deletions']
-    #    art_data = art_data[cols]
-
-    #    # Remove reverts that don't have diffs (just removed Wikipedia metadata, for instance)
-    #    mask = [isinstance(tup[0], str) or isinstance(tup[1], str) for tup in zip(art_data['additions'], art_data['deletions'])]
-    #    art_data = art_data[mask]
-    #        
-    #    art_data.drop_duplicates(inplace=True)
-
-    #    # Print edit scores if not multi file
-    #    art_data.to_csv(edscores_path, index=False)
-    #    tqdm.write("Wrote edit scores for article {:s}".format(edscores_path))
 
 def build_out(talk):
     """ Assemble editor scores with talk page discussion.
@@ -302,11 +269,6 @@ def build_out(talk):
         Args:
             talk: DataFrame of talk
     """
-
-    #if not mult_files:
-    #    art_data = pd.read_csv(edscores_path)
-
-    #    edthreads = sorted(set((zip(art_data['article'], art_data['thread_title'], art_data['editor'], art_data['editor_thread_score']))))
 
     print("Building editor threads ...")
     edthreads = []
@@ -396,25 +358,11 @@ def main():
 
     talk = pd.read_csv(infile, parse_dates=['timestamp'])
 
-    ## Filter out usernames from text
-    #usernames = set(talk['username'].tolist())
-
-    ## Check usernames against an English dictionary
-    #endict = set(words.words())
-    #print("Username overlap with English dictionary: {:.1%}".format(
-    #        len(usernames.intersection(endict))/len(usernames)))
-
-    ## Check usernames against an Arabic dictionary
-    #with open(ardict_path) as f:
-    #    ardict = set([w for w in f.read().splitlines()])
-    #print("Username overlap with Arabic dictionary: {:.1%}".format(
-    #        len(usernames.intersection(ardict))/len(usernames)))
-
     #stops = stopwords.words('arabic') 
     with open("stopwords_en.txt") as f:
         stops = f.read().splitlines()
 
-    #score_editors(stops, talk, 20)
+    score_editors(stops, talk, 20) # last argument is number of processes
     build_out(talk)
 
 if __name__ == '__main__':
